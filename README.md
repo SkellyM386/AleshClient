@@ -18,13 +18,7 @@ client.login(require('./config.json').token).catch(console.log)
 
 client.on('ready', () => console.log(`${client.user.username} has logged in!`))
 
-const runCommand = (command) => new Promise(callback => {
-  const usableCommands = commands.commands.filter(cmd => cmd.name === command || cmd.aliases.includes(command));
-  if(!usableCommands.size)return;
-  if(usableCommands.size !== 1)throw Error('multiple commands with the same name or alias found');
-  callback(usableCommands.array()[0]);
-});
-
+commands.registerHelpCommand();
 
 client.on("message", async message => {
   const { content, author } = message;
@@ -33,13 +27,15 @@ client.on("message", async message => {
   const args = content.slice(prefix.length).trim().split(' ');
   const command = args.shift().toLowerCase();
 
-  const cmd = await runCommand(command);
-  cmd.execute({
+  const req = {
     client: client,
     message: message,
     args: args,
     command: command,
     Discord: Discord,
-  });
+  };
+  commands.commands.run(message, command, req);
+
+
 });
 ```
