@@ -1,26 +1,34 @@
 const Discord = require('discord.js');
 
-const fs = require('fs');
+const AleshClient = require('./clientBase');
 
-module.exports = class AleshClient extends Discord.Client {
-  constructor(clientOptions) {
-    super(clientOptions);
+const client = new AleshClient();
 
-    class CommandRegistry {
-      constructor(commandFolder) {
-        this.commands = new Discord.Collection();
+const prefix = '.';
 
-        const commandFiles = fs.readdirSync(`./${commandFolder}/`).filter(file => (file.endsWith('.js') || !file.includes('.') && file !== 'procfile'));
+const commands = client.createRegistry('commands');
 
-        for(const file of commandFiles){
-          const command = require(`./${commandFolder}/${file}`);
+client.login(require('./config.json').token).catch(console.log)
 
-          this.commands.set(command.name, command);
-        };
-      }
-    };
+client.on('ready', () => console.log(`${client.user.username} has logged in!`))
 
-    this.createRegistry = (commandFolder) => new CommandRegistry(commandFolder);
+commands.registerHelpCommand();
 
-  }
-}
+client.on("message", async message => {
+  const { content, author } = message;
+  if (!content.startsWith(prefix) || author.bot) return;
+
+  const args = content.slice(prefix.length).trim().split(' ');
+  const command = args.shift().toLowerCase();
+
+  const req = {
+    client: client,
+    message: message,
+    args: args,
+    command: command,
+    Discord: Discord,
+  };
+  commands.commands.run(message, command, req);
+
+
+});
