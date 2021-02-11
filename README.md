@@ -13,7 +13,7 @@ const client = new Client({}, 'commands', require('./config.json'));
 
 ```
 <hr />
-<h1>make a config file and set it up file like so</h1>
+<h1>make a config file and set it up the file like so</h1>
 <hr>
 
 ```json
