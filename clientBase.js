@@ -1,104 +1,71 @@
 const Discord = require('discord.js');
-const Duration = require('humanize-duration');
-
 
 const fs = require('fs');
-const { type } = require('os');
-const { execute } = require('./commands/ping');
 
-module.exports = class AleshClient extends Discord.Client {
-  constructor(clientOptions) {
-    super(clientOptions);
+module.exports = class Client extends Discord.Client {
+  constructor(clientoptions, commandFile, config){
+    super(clientoptions);
 
-    class CommandRegistry {
-      constructor(commandFolder) {
-        this.commands = new Discord.Collection();
-        this.cooldown = null;
+    this.login(config.token).catch(console.log);
 
-        const commandFiles = fs.readdirSync(`./${commandFolder}/`).filter(file => (file.endsWith('.js') || !file.includes('.') && file !== 'procfile'));
 
-        for(const file of commandFiles){
-          const command = require(`./${commandFolder}/${file}`);
+    this.commands = new Discord.Collection();
 
-          this.commands.set(command.name, command);
+    const commands = fs.readdirSync(commandFile).filter(file => file.endsWith('.js'));
+
+    const usedCommands = [];
+
+    for(const file of commands){
+      const command = require(`./${commandFile}/${file}`);
+
+      const reformCommand = (cmd) => {
+        let object = { command: cmd };
+        if(!cmd)return {};
+        if(cmd.cooldown)if(cmd.cooldown >= 0){
+          object.cooldown = {
+            recentlyUsed: new Set(),
+            duration: cmd.cooldown
+          };
         };
+        return object;
+      }
+      console.log(`Registered Command ${command.name} in file ${file}`)
+      this.commands.set(command.name, reformCommand(command));
+    }
 
-        this.commandFilter = (commands = this.commands, command) => {
-          const usableCommands = commands.filter(cmd => {
-            if(cmd.name)if(cmd.name === command)return true;
-            if(cmd.aliases)if(cmd.aliases.includes(command))return true;
-            return false;
-        });
-        return usableCommands;
-      };
-
-      this.commands.run = (message = new Discord.Message, command, req) => {
-        const cmd = this.commandFilter(this.commands, command).first();
-        if(cmd)return cmd.execute(req);
-        return;
-      };
-
-      this.custom = {
-        help: () => {
-          let commands = [];
-          let pushContent = (obj = new Object, property = String()) => {
-            return (obj[property] ? obj[property]: undefined);
-          };
-          for(const cmd of this.commands.array().filter(val => typeof val === 'object')){
-            commands.push({
-              name: pushContent(cmd, 'name'),
-              memberName: (cmd['memberName'] ? cmd['memberName']: (cmd['name'] ? cmd['name']: null)),
-              description: pushContent(cmd, 'description'),
-              examples: pushContent(cmd, 'examples'),
-              group: pushContent(cmd, 'group'),
-              theme: pushContent(cmd, 'theme'),
-            });
-          };
-
-          let commandGroups = [];
-
-          this.commands.forEach(command => {
-            if(!commandGroups.includes(command.group))commandGroups.push({ name: command.group, commands: [] });
-          });
-          this.commands.forEach(command => {
-            if(command.group){
-              commandGroups.find(group => group.name === command.group).commands.push(command.name);
-            }
-          });
-          if(commandGroups.find(group => group.name === 'other').commands.length < 1)commandGroups.shift();
-          return commandGroups;
-        }
-      };
-
-      const commands = this.commands;
-      const custom = this.custom;
-
-      this.registerHelpCommand = () => {
-        this.commands.set('help', {
-          name: "help",
-          group: "other",
-          description: "show what commands are on this bot",
-          execute({ message } = req){
-      let embed = new Discord.MessageEmbed()
-      .setColor('RANDOM')
-      .setAuthor(message.author.username, message.author.avatarURL());
-      const groups = custom.help();
-      for(const group of groups){
-        let groupCommands = [];
-        for(const cmd of group.commands)groupCommands.push(cmd.name);
-        let stringOfCommands = `\`${group.commands.join('\`, \`')}\``;
-        embed.addField(`__**${group.name}**__`, stringOfCommands)
-      };
-      message.channel.send(embed);
-        }
-    })
-  }
-
+    this.run = (message, command, req) => {
+      const cmds = this.commands.filter(cmd => cmd.command.name === command || (cmd.command.aliases ? cmd.command.aliases.includes(command): false));
+      if(!cmds)return;
+      if(cmds.size < 1)return;
+      const selectedCommand = cmds.get(cmds.first().command.name);
+      const hasCooldown = (selectedCommand.cooldown ? selectedCommand.cooldown: false);
+      if(!hasCooldown)return selectedCommand.command.execute(req);
+      if(selectedCommand.cooldown.recentlyUsed.has(message.author.id))return message.channel.send(`your on cooldown please wait ${selectedCommand.cooldown.duration * 0.001} seconds`);
+      selectedCommand.cooldown.recentlyUsed.add(message.author.id);
+      setTimeout(() => {
+        return selectedCommand.cooldown.recentlyUsed.delete(message.author.id);
+      }, selectedCommand.cooldown.duration);
+      return selectedCommand.command.execute(req);
     };
-   };
 
+    this.on('message', message => { try {
+      if (!message.content.startsWith(config.prefix) || message.author.bot) return;
 
-    this.createRegistry = (commandFolder) => new CommandRegistry(commandFolder);
+      const args = message.content.slice(config.prefix.length).trim().split(/ /);
+      const command = args.shift().toLowerCase();
 
+      const req = {
+        Discord: Discord,
+        message: message,
+        prefix: config.prefix,
+        command: command,
+        args: args,
+      };
+
+      this.run(message, command, req);
+    } catch(e){
+      return;
+    }
+    })
   }
 }
